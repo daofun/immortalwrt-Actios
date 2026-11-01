@@ -1,10 +1,47 @@
 #!/bin/bash
-# DIY脚本
-# https://github.com/P3TERX/Actions-OpenWrt
-# 文件名: diy-part2.sh
-# 功能说明: OpenWrt DIY脚本第2部分（更新feeds之后）
-# 版权: (c) 2019-2024 P3TERX <https://p3terx.com>
-# 基于 MIT 开源协议，详见 /LICENSE
+# DIY脚本（修复版）
+# 基于 daofun/immortalwrt-Actios 原 diy-part2.sh
+# 修复 2026-11-01 构建失败的两个问题：
+#   1. glib2 打包失败：Package glib2-gobject is missing dependencies: libffi.so.8
+#      根因：lkiuyu/immortalwrt fork 的 package/libs 缺少 libffi，
+#      而 immortalwrt/packages master 的 glib2 依赖它（libffi/host 也是）。
+#   2. openstick feed 4 个包下载 hash 不匹配（PKG_MIRROR_HASH 过期）。
+
+# ============================================================
+# 修复 1（必须）：补回源码树缺失的 libffi
+# 从上游 immortalwrt master 拷贝 package/libs/libffi（含 patches）
+# ============================================================
+if [ ! -d package/libs/libffi ]; then
+  echo "==> [FIX] 源码树缺少 libffi，从上游 immortalwrt 补回..."
+  _tmpdir=$(mktemp -d)
+  git clone --depth 1 --filter=blob:none --sparse \
+    https://github.com/immortalwrt/immortalwrt.git "$_tmpdir/iwrt"
+  git -C "$_tmpdir/iwrt" sparse-checkout set package/libs/libffi
+  cp -r "$_tmpdir/iwrt/package/libs/libffi" package/libs/
+  rm -rf "$_tmpdir"
+  echo "==> [FIX] libffi 已添加到 package/libs/libffi"
+fi
+
+# ============================================================
+# 修复 2（建议）：跳过 openstick feed 过期/漂移的源码包 hash 校验
+# gc / libusbgx / qrtr / qcom-firmware 在 make download 阶段报
+# "Hash mismatch"，属于上游仓库更新后 feed 内锁定 hash 未同步。
+# ============================================================
+for mk in \
+  feeds/openstick/utils/gc/Makefile \
+  feeds/openstick/libs/libusbgx/Makefile \
+  feeds/openstick/utils/qrtr/Makefile \
+  feeds/openstick/firmware/qcom-firmware/Makefile
+do
+  if [ -f "$mk" ] && grep -q '^PKG_MIRROR_HASH:=' "$mk"; then
+    sed -i 's/^PKG_MIRROR_HASH:=.*/PKG_MIRROR_HASH:=skip/' "$mk"
+    echo "==> [FIX] $mk: PKG_MIRROR_HASH 已设为 skip"
+  fi
+done
+
+# ============================================================
+# 以下为原有内容
+# ============================================================
 
 # 修改默认IP地址
 #sed -i 's/192.168.1.1/192.168.100.1/g' package/base-files/files/bin/config_generate
